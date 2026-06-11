@@ -59,7 +59,7 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                         Projekty
-                        <span className="ml-2 text-sm font-normal text-gray-500">
+                        <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
                             ({projects.total})
                         </span>
                     </h1>
@@ -199,14 +199,11 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                                                     {project.creator?.full_name ?? '—'}
                                                 </td>
 
-                                                {/* Task count */}
+                                                {/* Task count: completed / total */}
                                                 <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden lg:table-cell">
-                                                    <span title="Ukończone / wszystkie">
+                                                    <span title="Ukończone / wszystkie zadania">
                                                         {project.completed_tasks_count ?? 0}
-                                                        <span className="text-gray-300 dark:text-gray-600">
-                                                            {' '}
-                                                            /{' '}
-                                                        </span>
+                                                        <span className="mx-0.5 text-gray-300 dark:text-gray-600">/</span>
                                                         {project.tasks_count ?? 0}
                                                     </span>
                                                 </td>
@@ -223,7 +220,7 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                                                                 style={{ width: `${progress}%` }}
                                                             />
                                                         </div>
-                                                        <span className="w-9 text-right text-xs tabular-nums text-gray-500">
+                                                        <span className="w-9 text-right text-xs tabular-nums text-gray-500 dark:text-gray-400">
                                                             {progress}%
                                                         </span>
                                                     </div>
@@ -283,6 +280,7 @@ export default function ProjectsIndex({ projects, filters }: Props) {
                             </p>
                             <div className="flex flex-wrap gap-1">
                                 {projects.links.map((link, i) => {
+                                    // Render non-clickable ellipsis items
                                     if (!link.url && link.label === '...') {
                                         return (
                                             <span

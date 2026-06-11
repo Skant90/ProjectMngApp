@@ -1,47 +1,63 @@
 import React, { useState } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
-import {
-    Calendar, Users, CheckSquare, AlertTriangle, BarChart2,
-    Pencil, ArrowLeft, Clock, Mail, Phone, Building2,
-} from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { Button } from '@/Components/ui/button';
 import { Badge } from '@/Components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
-import { Project, PageProps } from '@/types';
 import {
     cn,
     formatDate,
     formatDateTime,
+    isOverdue,
     PROJECT_STATUS_LABELS,
     PROJECT_STATUS_COLORS,
     PROJECT_PRIORITY_LABELS,
     TASK_STATUS_LABELS,
     TASK_STATUS_COLORS,
+    TASK_PRIORITY_LABELS,
     TASK_PRIORITY_COLORS,
-    isOverdue,
 } from '@/lib/utils';
+import {
+    PageProps,
+    Project,
+    ProjectMember,
+    ProjectContact,
+    Task,
+    ActivityLog,
+} from '@/types';
+import {
+    ArrowLeft,
+    Pencil,
+    Users,
+    CheckSquare,
+    Phone,
+    Mail,
+    Building2,
+    Activity,
+    AlertCircle,
+    Calendar,
+} from 'lucide-react';
 
 interface Props {
     project: Project & {
-        members?: import('@/types').ProjectMember[];
-        contacts?: import('@/types').ProjectContact[];
-        tasks?: import('@/types').Task[];
+        members?: ProjectMember[];
+        contacts?: ProjectContact[];
+        tasks?: Task[];
         tasks_count?: number;
         completed_tasks_count?: number;
         overdue_tasks_count?: number;
-        activity_log?: import('@/types').ActivityLog[];
+        activity_log?: ActivityLog[];
     };
 }
 
 type Tab = 'overview' | 'tasks' | 'members' | 'contacts' | 'activity';
 
-const tabs: { key: Tab; label: string }[] = [
-    { key: 'overview', label: 'Przegląd' },
-    { key: 'tasks', label: 'Zadania' },
-    { key: 'members', label: 'Członkowie' },
-    { key: 'contacts', label: 'Kontakty' },
-    { key: 'activity', label: 'Aktywność' },
+const TABS: { id: Tab; label: string }[] = [
+    { id: 'overview', label: 'Przegląd' },
+    { id: 'tasks', label: 'Zadania' },
+    { id: 'members', label: 'Członkowie' },
+    { id: 'contacts', label: 'Kontakty' },
+    { id: 'activity', label: 'Aktywność' },
 ];
 
 const MEMBER_ROLE_LABELS: Record<string, string> = {
@@ -50,363 +66,571 @@ const MEMBER_ROLE_LABELS: Record<string, string> = {
     guest: 'Gość',
 };
 
+const MEMBER_ROLE_COLORS: Record<string, string> = {
+    manager: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+    member: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    guest: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+};
+
+function TabButton({
+    tab,
+    activeTab,
+    count,
+    onClick,
+}: {
+    tab: Tab;
+    activeTab: Tab;
+    count?: number;
+    onClick: () => void;
+}) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none',
+                activeTab === tab
+                    ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300',
+            )}
+        >
+            {TABS.find(t => t.id === tab)?.label}
+            {count !== undefined && count > 0 && (
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    {count}
+                </span>
+            )}
+        </button>
+    );
+}
+
 export default function ProjectShow({ project }: Props) {
     const { auth, flash } = usePage<PageProps>().props;
+    const canManage = auth.user.role === 'admin' || auth.user.role === 'manager';
     const [activeTab, setActiveTab] = useState<Tab>('overview');
-    const canEdit = auth.user.role === 'admin' || auth.user.role === 'manager';
+
     const progress = project.progress ?? 0;
+    const tasksCount = project.tasks_count ?? 0;
+    const completedCount = project.completed_tasks_count ?? 0;
+    const overdueCount = project.overdue_tasks_count ?? 0;
+    const members = project.members ?? [];
+    const contacts = project.contacts ?? [];
+    const tasks = project.tasks ?? [];
+    const activityLog = project.activity_log ?? [];
 
     return (
         <AppLayout title={project.name}>
             <Head title={project.name} />
             <div className="p-6 space-y-5">
+                {/* Flash messages */}
                 {flash?.success && (
-                    <div className="rounded-md bg-green-50 px-4 py-3 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                    <div className="rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-400">
                         {flash.success}
+                    </div>
+                )}
+                {flash?.error && (
+                    <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-400">
+                        {flash.error}
                     </div>
                 )}
 
                 {/* Header */}
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex items-center gap-3">
-                        <Button variant="ghost" size="icon" asChild>
-                            <Link href={route('projects.index')}>
+                        <Link href={route('projects.index')}>
+                            <Button variant="ghost" size="sm" title="Wróć do listy projektów">
                                 <ArrowLeft className="h-4 w-4" />
-                            </Link>
-                        </Button>
+                            </Button>
+                        </Link>
                         <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
-                                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', PROJECT_STATUS_COLORS[project.status])}>
+                            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                                {project.name}
+                            </h1>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                                <span
+                                    className={cn(
+                                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                        PROJECT_STATUS_COLORS[project.status],
+                                    )}
+                                >
                                     {PROJECT_STATUS_LABELS[project.status]}
                                 </span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                    Priorytet: {PROJECT_PRIORITY_LABELS[project.priority]}
+                                </span>
                             </div>
-                            {project.description && (
-                                <p className="mt-0.5 text-sm text-gray-500">{project.description}</p>
-                            )}
                         </div>
                     </div>
-                    {canEdit && (
-                        <Button asChild>
-                            <Link href={route('projects.edit', project.id)}>
+                    {canManage && (
+                        <Link href={route('projects.edit', project.id)}>
+                            <Button size="sm" variant="outline">
                                 <Pencil className="h-4 w-4" />
-                                Edytuj
-                            </Link>
-                        </Button>
+                                Edytuj projekt
+                            </Button>
+                        </Link>
                     )}
                 </div>
 
-                {/* Tabs */}
+                {/* Tab navigation */}
                 <div className="border-b border-gray-200 dark:border-gray-700">
-                    <nav className="flex gap-1 -mb-px">
-                        {tabs.map(tab => (
-                            <button
-                                key={tab.key}
-                                onClick={() => setActiveTab(tab.key)}
-                                className={cn(
-                                    'px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
-                                    activeTab === tab.key
-                                        ? 'border-brand-600 text-brand-600 dark:border-brand-400 dark:text-brand-400'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                                )}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
+                    <nav className="-mb-px flex gap-0 overflow-x-auto" aria-label="Zakładki projektu">
+                        <TabButton tab="overview" activeTab={activeTab} onClick={() => setActiveTab('overview')} />
+                        <TabButton tab="tasks" activeTab={activeTab} count={tasksCount} onClick={() => setActiveTab('tasks')} />
+                        <TabButton tab="members" activeTab={activeTab} count={members.length} onClick={() => setActiveTab('members')} />
+                        <TabButton tab="contacts" activeTab={activeTab} count={contacts.length} onClick={() => setActiveTab('contacts')} />
+                        <TabButton tab="activity" activeTab={activeTab} onClick={() => setActiveTab('activity')} />
                     </nav>
                 </div>
 
-                {/* Overview */}
+                {/* ── Tab: Przegląd ── */}
                 {activeTab === 'overview' && (
-                    <div className="grid gap-5 lg:grid-cols-2">
-                        <div className="space-y-5">
+                    <div className="space-y-4">
+                        {/* Description */}
+                        {project.description && (
                             <Card>
-                                <CardHeader>
-                                    <CardTitle>Informacje</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-500">Status</span>
-                                        <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', PROJECT_STATUS_COLORS[project.status])}>
+                                <CardContent className="p-4">
+                                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        Opis projektu
+                                    </p>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                                        {project.description}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* Summary cards */}
+                        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                            <Card>
+                                <CardContent className="p-4">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        Status
+                                    </p>
+                                    <div className="mt-2">
+                                        <span
+                                            className={cn(
+                                                'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                                PROJECT_STATUS_COLORS[project.status],
+                                            )}
+                                        >
                                             {PROJECT_STATUS_LABELS[project.status]}
                                         </span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-500">Priorytet</span>
-                                        <span className="text-sm font-medium text-gray-900 dark:text-white">{PROJECT_PRIORITY_LABELS[project.priority]}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-500">Data rozpoczęcia</span>
-                                        <span className="text-sm text-gray-700 dark:text-gray-300">{formatDate(project.start_date)}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-500">Data zakończenia</span>
-                                        <span className="text-sm text-gray-700 dark:text-gray-300">{formatDate(project.end_date)}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-500">Twórca</span>
-                                        <span className="text-sm text-gray-700 dark:text-gray-300">{project.creator?.full_name ?? '—'}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-500">Liczba członków</span>
-                                        <span className="text-sm text-gray-700 dark:text-gray-300">{project.members?.length ?? 0}</span>
                                     </div>
                                 </CardContent>
                             </Card>
 
                             <Card>
-                                <CardHeader>
-                                    <CardTitle>Postęp projektu</CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3">
-                                    <div className="flex items-center justify-between text-sm">
-                                        <span className="text-gray-500">Ukończono</span>
-                                        <span className="font-semibold text-gray-900 dark:text-white">{progress}%</span>
-                                    </div>
-                                    <div className="h-3 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                                        <div
-                                            className="h-3 rounded-full bg-brand-500 transition-all"
-                                            style={{ width: `${progress}%` }}
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-3 pt-2">
-                                        <div className="text-center">
-                                            <p className="text-xl font-bold text-gray-900 dark:text-white">{project.tasks_count ?? 0}</p>
-                                            <p className="text-xs text-gray-500">Wszystkie</p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-xl font-bold text-green-600">{project.completed_tasks_count ?? 0}</p>
-                                            <p className="text-xs text-gray-500">Ukończone</p>
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="text-xl font-bold text-red-600">{(project as any).overdue_tasks_count ?? 0}</p>
-                                            <p className="text-xs text-gray-500">Po terminie</p>
-                                        </div>
-                                    </div>
+                                <CardContent className="p-4">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        Priorytet
+                                    </p>
+                                    <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                                        {PROJECT_PRIORITY_LABELS[project.priority]}
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardContent className="p-4">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        Data rozpoczęcia
+                                    </p>
+                                    <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-white">
+                                        {formatDate(project.start_date)}
+                                    </p>
+                                </CardContent>
+                            </Card>
+
+                            <Card>
+                                <CardContent className="p-4">
+                                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        Termin zakończenia
+                                    </p>
+                                    <p
+                                        className={cn(
+                                            'mt-2 text-sm font-semibold',
+                                            isOverdue(project.end_date) &&
+                                                project.status !== 'completed' &&
+                                                project.status !== 'archived'
+                                                ? 'text-red-600 dark:text-red-400'
+                                                : 'text-gray-900 dark:text-white',
+                                        )}
+                                    >
+                                        {formatDate(project.end_date)}
+                                    </p>
                                 </CardContent>
                             </Card>
                         </div>
 
+                        {/* Progress card */}
                         <Card>
-                            <CardHeader>
+                            <CardContent className="p-5 space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <CardTitle>Zadania kanban</CardTitle>
-                                    <Button variant="outline" size="sm" asChild>
-                                        <Link href={route('projects.kanban', project.id)}>
-                                            Kanban
-                                        </Link>
-                                    </Button>
+                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Ogólny postęp
+                                    </p>
+                                    <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
+                                        {progress}%
+                                    </span>
                                 </div>
-                            </CardHeader>
-                            <CardContent>
-                                {(project.tasks ?? []).length === 0 ? (
-                                    <p className="text-sm text-gray-400">Brak zadań w projekcie.</p>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {(project.tasks ?? []).slice(0, 8).map(task => (
-                                            <Link
-                                                key={task.id}
-                                                href={route('tasks.show', task.id)}
-                                                className="flex items-center justify-between rounded-md px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                                            >
-                                                <div className="flex items-center gap-2 min-w-0">
-                                                    <span className={cn('inline-block h-2 w-2 rounded-full shrink-0', {
-                                                        'bg-red-500': task.priority === 'urgent',
-                                                        'bg-orange-500': task.priority === 'high',
-                                                        'bg-blue-500': task.priority === 'medium',
-                                                        'bg-gray-400': task.priority === 'low',
-                                                    })} />
-                                                    <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{task.title}</span>
-                                                </div>
-                                                <span className={cn('text-xs rounded-full px-2 py-0.5 ml-2 shrink-0', TASK_STATUS_COLORS[task.status])}>
-                                                    {TASK_STATUS_LABELS[task.status]}
-                                                </span>
-                                            </Link>
-                                        ))}
+                                <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                                    <div
+                                        className="h-full rounded-full bg-brand-500 transition-all duration-500"
+                                        style={{ width: `${progress}%` }}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-3 divide-x divide-gray-100 pt-1 dark:divide-gray-700">
+                                    <div className="pr-4 text-center">
+                                        <p className="text-2xl font-bold text-gray-900 dark:text-white tabular-nums">
+                                            {tasksCount}
+                                        </p>
+                                        <p className="text-xs text-gray-500">Wszystkie zadania</p>
                                     </div>
-                                )}
+                                    <div className="px-4 text-center">
+                                        <p className="text-2xl font-bold text-green-600 dark:text-green-400 tabular-nums">
+                                            {completedCount}
+                                        </p>
+                                        <p className="text-xs text-gray-500">Ukończone</p>
+                                    </div>
+                                    <div className="pl-4 text-center">
+                                        <p className="text-2xl font-bold text-red-600 dark:text-red-400 tabular-nums">
+                                            {overdueCount}
+                                        </p>
+                                        <p className="text-xs text-gray-500">Przeterminowane</p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Metadata */}
+                        <Card>
+                            <CardContent className="p-4">
+                                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                                    <div>
+                                        <dt className="font-medium text-gray-500 dark:text-gray-400">Twórca</dt>
+                                        <dd className="mt-0.5 text-gray-900 dark:text-white">
+                                            {project.creator?.full_name ?? '—'}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt className="font-medium text-gray-500 dark:text-gray-400">
+                                            Liczba członków
+                                        </dt>
+                                        <dd className="mt-0.5 text-gray-900 dark:text-white">
+                                            {members.length}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt className="font-medium text-gray-500 dark:text-gray-400">
+                                            Data utworzenia
+                                        </dt>
+                                        <dd className="mt-0.5 text-gray-900 dark:text-white">
+                                            {formatDateTime(project.created_at)}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt className="font-medium text-gray-500 dark:text-gray-400">
+                                            Ostatnia aktualizacja
+                                        </dt>
+                                        <dd className="mt-0.5 text-gray-900 dark:text-white">
+                                            {formatDateTime(project.updated_at)}
+                                        </dd>
+                                    </div>
+                                </dl>
                             </CardContent>
                         </Card>
                     </div>
                 )}
 
-                {/* Tasks */}
+                {/* ── Tab: Zadania ── */}
                 {activeTab === 'tasks' && (
                     <Card>
-                        <CardHeader>
-                            <div className="flex items-center justify-between">
-                                <CardTitle>Zadania ({project.tasks?.length ?? 0})</CardTitle>
-                                <Button asChild>
-                                    <Link href={route('tasks.create', { project_id: project.id })}>
-                                        Dodaj zadanie
-                                    </Link>
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
+                        <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="border-b border-gray-200 dark:border-gray-700">
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500">Tytuł</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500">Status</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500 hidden sm:table-cell">Przypisany</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500 hidden md:table-cell">Termin</th>
+                                        <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                            Zadanie
+                                        </th>
+                                        <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                            Status
+                                        </th>
+                                        <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                            Priorytet
+                                        </th>
+                                        <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 hidden md:table-cell">
+                                            Przypisane do
+                                        </th>
+                                        <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 hidden lg:table-cell">
+                                            Termin
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                    {(project.tasks ?? []).length === 0 && (
+                                    {tasks.length === 0 ? (
                                         <tr>
-                                            <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                                            <td
+                                                colSpan={5}
+                                                className="px-4 py-10 text-center text-gray-500 dark:text-gray-400"
+                                            >
                                                 Brak zadań w tym projekcie.
                                             </td>
                                         </tr>
+                                    ) : (
+                                        tasks.map(task => (
+                                            <tr
+                                                key={task.id}
+                                                className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                                            >
+                                                {/* Title */}
+                                                <td className="px-4 py-3">
+                                                    <Link
+                                                        href={route('tasks.show', task.id)}
+                                                        className="font-medium text-brand-600 hover:underline dark:text-brand-400"
+                                                    >
+                                                        {task.title}
+                                                    </Link>
+                                                </td>
+
+                                                {/* Status */}
+                                                <td className="px-4 py-3">
+                                                    <span
+                                                        className={cn(
+                                                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                                                            TASK_STATUS_COLORS[task.status],
+                                                        )}
+                                                    >
+                                                        {TASK_STATUS_LABELS[task.status]}
+                                                    </span>
+                                                </td>
+
+                                                {/* Priority */}
+                                                <td className="px-4 py-3">
+                                                    <span
+                                                        className={cn(
+                                                            'text-xs font-medium',
+                                                            TASK_PRIORITY_COLORS[task.priority],
+                                                        )}
+                                                    >
+                                                        {TASK_PRIORITY_LABELS[task.priority]}
+                                                    </span>
+                                                </td>
+
+                                                {/* Assignee */}
+                                                <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden md:table-cell">
+                                                    {task.assignee?.full_name ?? (
+                                                        <span className="text-gray-300 dark:text-gray-600 italic">
+                                                            Nieprzypisane
+                                                        </span>
+                                                    )}
+                                                </td>
+
+                                                {/* Due date */}
+                                                <td className="px-4 py-3 hidden lg:table-cell">
+                                                    {task.due_date ? (
+                                                        <span
+                                                            className={cn(
+                                                                'inline-flex items-center gap-1 text-sm',
+                                                                isOverdue(task.due_date) &&
+                                                                    task.status !== 'done' &&
+                                                                    task.status !== 'cancelled'
+                                                                    ? 'font-medium text-red-600 dark:text-red-400'
+                                                                    : 'text-gray-500 dark:text-gray-400',
+                                                            )}
+                                                        >
+                                                            {isOverdue(task.due_date) &&
+                                                                task.status !== 'done' &&
+                                                                task.status !== 'cancelled' && (
+                                                                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                                                )}
+                                                            {formatDate(task.due_date)}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-300 dark:text-gray-600">—</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
                                     )}
-                                    {(project.tasks ?? []).map(task => (
-                                        <tr key={task.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                            <td className="px-4 py-3">
-                                                <Link href={route('tasks.show', task.id)} className="text-gray-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-400">
-                                                    {task.title}
-                                                </Link>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold', TASK_STATUS_COLORS[task.status])}>
-                                                    {TASK_STATUS_LABELS[task.status]}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">
-                                                {task.assignee?.full_name ?? '—'}
-                                            </td>
-                                            <td className={cn('px-4 py-3 hidden md:table-cell', isOverdue(task.due_date) ? 'text-red-500 font-medium' : 'text-gray-500')}>
-                                                {formatDate(task.due_date)}
-                                            </td>
-                                        </tr>
-                                    ))}
                                 </tbody>
                             </table>
-                        </CardContent>
+                        </div>
                     </Card>
                 )}
 
-                {/* Members */}
+                {/* ── Tab: Członkowie ── */}
                 {activeTab === 'members' && (
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Członkowie ({project.members?.length ?? 0})</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-gray-200 dark:border-gray-700">
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500">Użytkownik</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500">Rola</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500 hidden sm:table-cell">Email</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                    {(project.members ?? []).length === 0 && (
-                                        <tr>
-                                            <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
-                                                Brak członków projektu.
-                                            </td>
+                        {members.length === 0 ? (
+                            <CardContent className="py-10 text-center text-gray-500 dark:text-gray-400">
+                                <Users className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                                <p className="text-sm">Brak członków przypisanych do tego projektu.</p>
+                            </CardContent>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-gray-200 dark:border-gray-700">
+                                            <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                                Użytkownik
+                                            </th>
+                                            <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                                Rola w projekcie
+                                            </th>
+                                            <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                                                Adres e-mail
+                                            </th>
                                         </tr>
-                                    )}
-                                    {(project.members ?? []).map(member => (
-                                        <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
-                                                        {member.user?.first_name?.[0]}{member.user?.last_name?.[0]}
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                        {members.map(member => (
+                                            <tr
+                                                key={member.id}
+                                                className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                                            >
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                                                            {member.user?.first_name?.[0]}
+                                                            {member.user?.last_name?.[0]}
+                                                        </div>
+                                                        <span className="font-medium text-gray-900 dark:text-white">
+                                                            {member.user?.full_name ?? '—'}
+                                                        </span>
                                                     </div>
-                                                    <span className="font-medium text-gray-900 dark:text-white">
-                                                        {member.user?.full_name}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <Badge variant="secondary">
-                                                    {MEMBER_ROLE_LABELS[member.project_role] ?? member.project_role}
-                                                </Badge>
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">
-                                                {member.user?.email}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </CardContent>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Badge
+                                                        className={cn(
+                                                            'rounded-full text-xs font-semibold',
+                                                            MEMBER_ROLE_COLORS[member.project_role] ??
+                                                                'bg-gray-100 text-gray-600',
+                                                        )}
+                                                    >
+                                                        {MEMBER_ROLE_LABELS[member.project_role] ??
+                                                            member.project_role}
+                                                    </Badge>
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                                                    {member.user?.email ?? '—'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </Card>
                 )}
 
-                {/* Contacts */}
+                {/* ── Tab: Kontakty ── */}
                 {activeTab === 'contacts' && (
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Kontakty ({(project as any).contacts?.length ?? 0})</CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-gray-200 dark:border-gray-700">
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500">Imię i nazwisko</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500 hidden sm:table-cell">Firma</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500 hidden md:table-cell">Email</th>
-                                        <th className="px-4 py-3 text-left font-medium text-gray-500 hidden lg:table-cell">Telefon</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                    {((project as any).contacts ?? []).length === 0 && (
-                                        <tr>
-                                            <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
-                                                Brak kontaktów w projekcie.
-                                            </td>
-                                        </tr>
-                                    )}
-                                    {((project as any).contacts ?? []).map((contact: import('@/types').ProjectContact) => (
-                                        <tr key={contact.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                            <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                                {contact.first_name} {contact.last_name}
-                                                {contact.position && <span className="ml-1 text-xs text-gray-400">({contact.position})</span>}
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{contact.company ?? '—'}</td>
-                                            <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{contact.email ?? '—'}</td>
-                                            <td className="px-4 py-3 text-gray-500 hidden lg:table-cell">{contact.phone ?? '—'}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </CardContent>
+                        {contacts.length === 0 ? (
+                            <CardContent className="py-10 text-center text-gray-500 dark:text-gray-400">
+                                <Phone className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                                <p className="text-sm">Brak kontaktów przypisanych do tego projektu.</p>
+                            </CardContent>
+                        ) : (
+                            <ul className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                {contacts.map((contact: ProjectContact) => (
+                                    <li key={contact.id} className="px-4 py-4">
+                                        <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:justify-between">
+                                            <div>
+                                                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                                    {contact.first_name} {contact.last_name}
+                                                </p>
+                                                {contact.position && (
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                                        {contact.position}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            {contact.company && (
+                                                <span className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                                                    <Building2 className="h-3.5 w-3.5 shrink-0" />
+                                                    {contact.company}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                                            {contact.email && (
+                                                <a
+                                                    href={`mailto:${contact.email}`}
+                                                    className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline dark:text-brand-400"
+                                                >
+                                                    <Mail className="h-3.5 w-3.5" />
+                                                    {contact.email}
+                                                </a>
+                                            )}
+                                            {contact.phone && (
+                                                <a
+                                                    href={`tel:${contact.phone}`}
+                                                    className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline dark:text-brand-400"
+                                                >
+                                                    <Phone className="h-3.5 w-3.5" />
+                                                    {contact.phone}
+                                                </a>
+                                            )}
+                                        </div>
+                                        {contact.notes && (
+                                            <p className="mt-1.5 text-xs italic text-gray-400 dark:text-gray-500">
+                                                {contact.notes}
+                                            </p>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </Card>
                 )}
 
-                {/* Activity */}
+                {/* ── Tab: Aktywność ── */}
                 {activeTab === 'activity' && (
                     <Card>
-                        <CardHeader>
-                            <CardTitle>Dziennik aktywności</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            {((project as any).activity_log ?? []).length === 0 ? (
-                                <p className="text-sm text-gray-400">Brak zapisanej aktywności.</p>
-                            ) : (
-                                <div className="space-y-4">
-                                    {((project as any).activity_log ?? []).map((log: import('@/types').ActivityLog) => (
-                                        <div key={log.id} className="flex items-start gap-3">
-                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium dark:bg-gray-700">
-                                                {log.user?.first_name?.[0]}{log.user?.last_name?.[0]}
+                        {activityLog.length === 0 ? (
+                            <CardContent className="py-10 text-center text-gray-500 dark:text-gray-400">
+                                <Activity className="mx-auto mb-2 h-8 w-8 opacity-30" />
+                                <p className="text-sm">Brak zapisanej aktywności dla tego projektu.</p>
+                            </CardContent>
+                        ) : (
+                            <CardContent className="p-4">
+                                <ol className="space-y-5">
+                                    {activityLog.map((log: ActivityLog) => (
+                                        <li key={log.id} className="flex items-start gap-3">
+                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-semibold dark:bg-gray-700 dark:text-gray-300">
+                                                {log.user?.first_name?.[0]}
+                                                {log.user?.last_name?.[0]}
                                             </div>
-                                            <div>
+                                            <div className="flex-1 min-w-0">
                                                 <p className="text-sm text-gray-700 dark:text-gray-300">
-                                                    <span className="font-medium">{log.user?.full_name}</span>
-                                                    {' — '}{log.action}
+                                                    <span className="font-medium text-gray-900 dark:text-white">
+                                                        {log.user?.full_name ?? 'System'}
+                                                    </span>
+                                                    {' — '}
+                                                    {log.action}
                                                 </p>
-                                                <p className="text-xs text-gray-400">{formatDateTime(log.created_at)}</p>
+                                                {(log.old_value || log.new_value) && (
+                                                    <p className="mt-0.5 text-xs text-gray-400">
+                                                        {log.old_value && (
+                                                            <span className="line-through mr-1">{log.old_value}</span>
+                                                        )}
+                                                        {log.new_value && (
+                                                            <span className="text-gray-600 dark:text-gray-300">
+                                                                {log.new_value}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                )}
+                                                <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-400">
+                                                    <Calendar className="h-3 w-3" />
+                                                    {formatDateTime(log.created_at)}
+                                                </p>
                                             </div>
-                                        </div>
+                                        </li>
                                     ))}
-                                </div>
-                            )}
-                        </CardContent>
+                                </ol>
+                            </CardContent>
+                        )}
                     </Card>
                 )}
             </div>

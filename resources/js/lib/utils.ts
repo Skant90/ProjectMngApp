@@ -89,3 +89,10 @@ export const PROJECT_PRIORITY_LABELS: Record<ProjectPriority, string> = {
     high: 'Wysoki',
     critical: 'Krytyczny',
 };
+
+export const TASK_PRIORITY_DOT_COLORS: Record<TaskPriority, string> = {
+    low: 'bg-gray-400',
+    medium: 'bg-blue-500',
+    high: 'bg-orange-500',
+    urgent: 'bg-red-500',
+};

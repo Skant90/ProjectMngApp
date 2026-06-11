@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AppLayout from '@/Layouts/AppLayout';
 import { Badge } from '@/Components/ui/badge';
@@ -13,8 +12,11 @@ import {
     TASK_STATUS_COLORS,
     TASK_PRIORITY_LABELS,
     TASK_PRIORITY_COLORS,
+    TASK_PRIORITY_DOT_COLORS,
+    PROJECT_STATUS_LABELS,
 } from '@/lib/utils';
-import { Task, Project, Tag, PaginatedData, PageProps, TaskStatus, TaskPriority } from '@/types';
+import { PaginatedData, Task, Project, Tag, PageProps } from '@/types';
+import { useState, useCallback } from 'react';
 
 interface Props {
     tasks: PaginatedData<Task>;
@@ -32,7 +34,7 @@ interface Props {
 }
 
 export default function TasksIndex({ tasks, projects, tags, filters }: Props) {
-    const { flash } = usePage<PageProps>().props;
+    const { auth, flash } = usePage<PageProps>().props;
 
     const [search, setSearch] = useState(filters.search ?? '');
     const [projectId, setProjectId] = useState(filters.project_id ?? '');
@@ -41,245 +43,208 @@ export default function TasksIndex({ tasks, projects, tags, filters }: Props) {
     const [overdue, setOverdue] = useState(filters.overdue === '1');
     const [myTasks, setMyTasks] = useState(filters.my_tasks === '1');
 
-    const applyFilters = (overrides: Record<string, string | undefined> = {}) => {
-        const params: Record<string, string | undefined> = {
-            search: search || undefined,
-            project_id: projectId || undefined,
-            status: status || undefined,
-            priority: priority || undefined,
-            overdue: overdue ? '1' : undefined,
-            my_tasks: myTasks ? '1' : undefined,
-            ...overrides,
-        };
+    const applyFilters = useCallback(
+        (overrides: Record<string, string | undefined> = {}) => {
+            router.get(
+                route('tasks.index'),
+                {
+                    search: search || undefined,
+                    project_id: projectId || undefined,
+                    status: status || undefined,
+                    priority: priority || undefined,
+                    overdue: overdue ? '1' : undefined,
+                    my_tasks: myTasks ? '1' : undefined,
+                    ...overrides,
+                },
+                { preserveState: true, replace: true },
+            );
+        },
+        [search, projectId, status, priority, overdue, myTasks],
+    );
 
-        router.get(route('tasks.index'), params as Record<string, string>, {
-            preserveState: true,
-            replace: true,
-        });
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') applyFilters({ search: search || undefined });
     };
 
-    useEffect(() => {
-        const timeout = setTimeout(() => applyFilters(), 400);
-        return () => clearTimeout(timeout);
-    }, [search]);
-
-    const handleSelectChange = (setter: (v: string) => void, value: string) => {
-        setter(value);
-        applyFilters({ [setter === setProjectId ? 'project_id' : setter === setStatus ? 'status' : 'priority']: value || undefined });
+    const handleProjectChange = (value: string) => {
+        setProjectId(value);
+        applyFilters({ project_id: value || undefined });
     };
 
-    const handleOverdueChange = (checked: boolean) => {
+    const handleStatusChange = (value: string) => {
+        setStatus(value);
+        applyFilters({ status: value || undefined });
+    };
+
+    const handlePriorityChange = (value: string) => {
+        setPriority(value);
+        applyFilters({ priority: value || undefined });
+    };
+
+    const handleOverdueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const checked = e.target.checked;
         setOverdue(checked);
         applyFilters({ overdue: checked ? '1' : undefined });
     };
 
-    const handleMyTasksChange = (checked: boolean) => {
+    const handleMyTasksChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const checked = e.target.checked;
         setMyTasks(checked);
         applyFilters({ my_tasks: checked ? '1' : undefined });
-    };
-
-    const PRIORITY_DOT_COLORS: Record<TaskPriority, string> = {
-        low: 'bg-gray-400',
-        medium: 'bg-blue-500',
-        high: 'bg-orange-500',
-        urgent: 'bg-red-500',
     };
 
     return (
         <AppLayout title="Zadania">
             <Head title="Zadania" />
 
-            <div className="space-y-5">
-                {/* Flash messages */}
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {flash?.success && (
-                    <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300">
+                    <div className="mb-4 rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">
                         {flash.success}
                     </div>
                 )}
                 {flash?.error && (
-                    <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                    <div className="mb-4 rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-800">
                         {flash.error}
                     </div>
                 )}
 
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Zadania</h1>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            Łącznie: {tasks.total} {tasks.total === 1 ? 'zadanie' : 'zadań'}
-                        </p>
-                    </div>
+                <div className="flex items-center justify-between mb-6">
+                    <h1 className="text-2xl font-bold text-gray-900">Zadania</h1>
                     <Link href={route('tasks.create')}>
-                        <Button>
-                            <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                            Nowe zadanie
-                        </Button>
+                        <Button>+ Nowe zadanie</Button>
                     </Link>
                 </div>
 
                 {/* Filter bar */}
-                <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-                    <div className="flex flex-wrap items-end gap-3">
-                        <div className="min-w-[200px] flex-1">
-                            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-                                Szukaj
-                            </label>
-                            <Input
-                                type="text"
-                                placeholder="Tytuł zadania..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                            />
-                        </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6 flex flex-wrap gap-3 items-center">
+                    <Input
+                        placeholder="Szukaj zadań…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        onKeyDown={handleSearchKeyDown}
+                        onBlur={() => applyFilters({ search: search || undefined })}
+                        className="w-52"
+                    />
 
-                        <div className="min-w-[160px]">
-                            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-                                Projekt
-                            </label>
-                            <Select
-                                value={projectId}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    setProjectId(v);
-                                    applyFilters({ project_id: v || undefined });
-                                }}
-                                placeholder="Wszystkie projekty"
-                            >
-                                {projects.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                        {p.name}
-                                    </option>
-                                ))}
-                            </Select>
-                        </div>
+                    <Select
+                        value={projectId}
+                        onChange={handleProjectChange}
+                        placeholder="Wszystkie projekty"
+                        className="w-48"
+                    >
+                        <option value="">Wszystkie projekty</option>
+                        {projects.map((p) => (
+                            <option key={p.id} value={String(p.id)}>
+                                {p.name}
+                            </option>
+                        ))}
+                    </Select>
 
-                        <div className="min-w-[150px]">
-                            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-                                Status
-                            </label>
-                            <Select
-                                value={status}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    setStatus(v);
-                                    applyFilters({ status: v || undefined });
-                                }}
-                                placeholder="Wszystkie statusy"
-                            >
-                                {(Object.entries(TASK_STATUS_LABELS) as [TaskStatus, string][]).map(([val, label]) => (
-                                    <option key={val} value={val}>{label}</option>
-                                ))}
-                            </Select>
-                        </div>
+                    <Select
+                        value={status}
+                        onChange={handleStatusChange}
+                        placeholder="Dowolny status"
+                        className="w-44"
+                    >
+                        <option value="">Dowolny status</option>
+                        {Object.entries(TASK_STATUS_LABELS).map(([val, label]) => (
+                            <option key={val} value={val}>
+                                {label}
+                            </option>
+                        ))}
+                    </Select>
 
-                        <div className="min-w-[150px]">
-                            <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-                                Priorytet
-                            </label>
-                            <Select
-                                value={priority}
-                                onChange={(e) => {
-                                    const v = e.target.value;
-                                    setPriority(v);
-                                    applyFilters({ priority: v || undefined });
-                                }}
-                                placeholder="Wszystkie priorytety"
-                            >
-                                {(Object.entries(TASK_PRIORITY_LABELS) as [TaskPriority, string][]).map(([val, label]) => (
-                                    <option key={val} value={val}>{label}</option>
-                                ))}
-                            </Select>
-                        </div>
+                    <Select
+                        value={priority}
+                        onChange={handlePriorityChange}
+                        placeholder="Dowolny priorytet"
+                        className="w-44"
+                    >
+                        <option value="">Dowolny priorytet</option>
+                        {Object.entries(TASK_PRIORITY_LABELS).map(([val, label]) => (
+                            <option key={val} value={val}>
+                                {label}
+                            </option>
+                        ))}
+                    </Select>
 
-                        <div className="flex items-center gap-4 pb-1">
-                            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                                <input
-                                    type="checkbox"
-                                    checked={overdue}
-                                    onChange={(e) => handleOverdueChange(e.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                                />
-                                Przeterminowane
-                            </label>
-                            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                                <input
-                                    type="checkbox"
-                                    checked={myTasks}
-                                    onChange={(e) => handleMyTasksChange(e.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                                />
-                                Moje zadania
-                            </label>
-                        </div>
-                    </div>
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={overdue}
+                            onChange={handleOverdueChange}
+                            className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        Przeterminowane
+                    </label>
+
+                    <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={myTasks}
+                            onChange={handleMyTasksChange}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Moje zadania
+                    </label>
                 </div>
 
                 {/* Table */}
-                <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                            <thead className="bg-gray-50 dark:bg-gray-900/50">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Tytuł
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Projekt
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Status
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Priorytet
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Osoba
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Termin
                                     </th>
-                                    <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Akcje
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                            <tbody className="bg-white divide-y divide-gray-100">
                                 {tasks.data.length === 0 ? (
                                     <tr>
                                         <td
                                             colSpan={7}
-                                            className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400"
+                                            className="px-6 py-12 text-center text-sm text-gray-500"
                                         >
-                                            Brak zadań spełniających kryteria filtrowania.
+                                            Brak zadań spełniających kryteria.
                                         </td>
                                     </tr>
                                 ) : (
                                     tasks.data.map((task) => (
-                                        <tr
-                                            key={task.id}
-                                            className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/30"
-                                        >
-                                            <td className="max-w-xs px-4 py-3">
+                                        <tr key={task.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4 max-w-xs">
                                                 <Link
                                                     href={route('tasks.show', task.id)}
-                                                    className="font-medium text-gray-900 hover:text-brand-600 dark:text-gray-100 dark:hover:text-brand-400"
+                                                    className="font-medium text-blue-700 hover:text-blue-900 hover:underline line-clamp-2"
                                                 >
                                                     {task.title}
                                                 </Link>
-                                                {task.parent_task_id && (
-                                                    <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
-                                                        Podzadanie
-                                                    </p>
-                                                )}
                                             </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                            <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">
                                                 {task.project ? (
                                                     <Link
                                                         href={route('projects.show', task.project_id)}
-                                                        className="hover:text-brand-600 dark:hover:text-brand-400"
+                                                        className="hover:underline text-gray-700"
                                                     >
                                                         {task.project.name}
                                                     </Link>
@@ -287,63 +252,59 @@ export default function TasksIndex({ tasks, projects, tags, filters }: Props) {
                                                     '—'
                                                 )}
                                             </td>
-                                            <td className="whitespace-nowrap px-4 py-3">
-                                                <span
+                                            <td className="px-6 py-4 whitespace-nowrap">
+                                                <Badge
+                                                    variant="outline"
                                                     className={cn(
-                                                        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                                                        TASK_STATUS_COLORS[task.status]
+                                                        'text-xs font-medium',
+                                                        TASK_STATUS_COLORS[task.status],
                                                     )}
                                                 >
                                                     {TASK_STATUS_LABELS[task.status]}
-                                                </span>
+                                                </Badge>
                                             </td>
-                                            <td className="whitespace-nowrap px-4 py-3">
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 <span
                                                     className={cn(
                                                         'flex items-center gap-1.5 text-sm font-medium',
-                                                        TASK_PRIORITY_COLORS[task.priority]
+                                                        TASK_PRIORITY_COLORS[task.priority],
                                                     )}
                                                 >
                                                     <span
                                                         className={cn(
-                                                            'inline-block h-2 w-2 flex-shrink-0 rounded-full',
-                                                            PRIORITY_DOT_COLORS[task.priority]
+                                                            'inline-block h-2 w-2 rounded-full',
+                                                            TASK_PRIORITY_DOT_COLORS[task.priority],
                                                         )}
                                                     />
                                                     {TASK_PRIORITY_LABELS[task.priority]}
                                                 </span>
                                             </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
-                                                {task.assignee ? task.assignee.full_name : '—'}
+                                            <td className="px-6 py-4 text-sm text-gray-700 whitespace-nowrap">
+                                                {task.assignee
+                                                    ? task.assignee.full_name
+                                                    : '—'}
                                             </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-sm">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm">
                                                 {task.due_date ? (
                                                     <span
                                                         className={cn(
                                                             isOverdue(task.due_date) && task.status !== 'done' && task.status !== 'cancelled'
-                                                                ? 'font-medium text-red-600 dark:text-red-400'
-                                                                : 'text-gray-600 dark:text-gray-400'
+                                                                ? 'text-red-600 font-semibold'
+                                                                : 'text-gray-700',
                                                         )}
                                                     >
                                                         {formatDate(task.due_date)}
                                                     </span>
                                                 ) : (
-                                                    <span className="text-gray-400 dark:text-gray-500">—</span>
+                                                    <span className="text-gray-400">—</span>
                                                 )}
                                             </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <Link href={route('tasks.show', task.id)}>
-                                                        <Button variant="ghost" size="sm">
-                                                            Szczegóły
-                                                        </Button>
-                                                    </Link>
-                                                    <Link href={route('tasks.edit', task.id)}>
-                                                        <Button variant="ghost" size="sm">
-                                                            Edytuj
-                                                        </Button>
-                                                    </Link>
-                                                </div>
+                                            <td className="px-6 py-4 text-right whitespace-nowrap">
+                                                <Link href={route('tasks.show', task.id)}>
+                                                    <Button variant="ghost" size="sm">
+                                                        Szczegóły
+                                                    </Button>
+                                                </Link>
                                             </td>
                                         </tr>
                                     ))
@@ -354,32 +315,55 @@ export default function TasksIndex({ tasks, projects, tags, filters }: Props) {
 
                     {/* Pagination */}
                     {tasks.last_page > 1 && (
-                        <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-700">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                                Wyświetlanie {tasks.from}–{tasks.to} z {tasks.total} wyników
+                        <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-between bg-gray-50">
+                            <p className="text-sm text-gray-600">
+                                Wyniki {tasks.from}–{tasks.to} z {tasks.total}
                             </p>
                             <div className="flex items-center gap-1">
                                 {tasks.links.map((link, i) => {
-                                    if (!link.url && !link.active) {
+                                    if (link.label === '&laquo; Previous')
                                         return (
-                                            <span
+                                            <Link
                                                 key={i}
-                                                className="px-2 py-1 text-sm text-gray-400 dark:text-gray-500"
-                                                dangerouslySetInnerHTML={{ __html: link.label }}
-                                            />
+                                                href={link.url ?? '#'}
+                                                preserveState
+                                                className={cn(
+                                                    'px-3 py-1.5 rounded text-sm border',
+                                                    !link.url
+                                                        ? 'pointer-events-none opacity-40 bg-white border-gray-200 text-gray-400'
+                                                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100',
+                                                )}
+                                            >
+                                                ‹ Poprzednia
+                                            </Link>
                                         );
-                                    }
+                                    if (link.label === 'Next &raquo;')
+                                        return (
+                                            <Link
+                                                key={i}
+                                                href={link.url ?? '#'}
+                                                preserveState
+                                                className={cn(
+                                                    'px-3 py-1.5 rounded text-sm border',
+                                                    !link.url
+                                                        ? 'pointer-events-none opacity-40 bg-white border-gray-200 text-gray-400'
+                                                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100',
+                                                )}
+                                            >
+                                                Następna ›
+                                            </Link>
+                                        );
                                     return (
-                                        <button
+                                        <Link
                                             key={i}
-                                            onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
-                                            disabled={!link.url || link.active}
+                                            href={link.url ?? '#'}
+                                            preserveState
                                             className={cn(
-                                                'rounded px-3 py-1 text-sm transition-colors',
+                                                'px-3 py-1.5 rounded text-sm border',
                                                 link.active
-                                                    ? 'bg-brand-600 font-semibold text-white'
-                                                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700',
-                                                !link.url && 'cursor-not-allowed opacity-40'
+                                                    ? 'bg-blue-600 border-blue-600 text-white font-semibold'
+                                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-100',
+                                                !link.url && 'pointer-events-none opacity-40',
                                             )}
                                             dangerouslySetInnerHTML={{ __html: link.label }}
                                         />

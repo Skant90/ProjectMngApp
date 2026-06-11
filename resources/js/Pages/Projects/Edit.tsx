@@ -6,41 +6,63 @@ import { Input } from '@/Components/ui/input';
 import { Select } from '@/Components/ui/select';
 import { Textarea } from '@/Components/ui/textarea';
 import { Label } from '@/Components/ui/label';
+import { Badge } from '@/Components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/Components/ui/card';
-import { User } from '@/types';
+import { Project, User } from '@/types';
 import { ArrowLeft } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface Props {
+    project: Project;
     users: User[];
 }
 
-export default function ProjectCreate({ users: _users }: Props) {
-    const { data, setData, post, processing, errors } = useForm({
-        name: '',
-        description: '',
-        status: 'active' as string,
-        priority: 'normal' as string,
-        start_date: '',
-        end_date: '',
+const MEMBER_ROLE_LABELS: Record<string, string> = {
+    manager: 'Kierownik',
+    member: 'Członek',
+    guest: 'Gość',
+};
+
+const MEMBER_ROLE_COLORS: Record<string, string> = {
+    manager: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+    member: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    guest: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+};
+
+export default function ProjectEdit({ project, users: _users }: Props) {
+    const { data, setData, put, processing, errors } = useForm({
+        name: project.name,
+        description: project.description ?? '',
+        status: project.status as string,
+        priority: project.priority as string,
+        start_date: project.start_date ?? '',
+        end_date: project.end_date ?? '',
     });
 
     function submit(e: React.FormEvent) {
         e.preventDefault();
-        post(route('projects.store'));
+        put(route('projects.update', project.id));
     }
 
+    const members = project.members ?? [];
+
     return (
-        <AppLayout title="Nowy projekt">
-            <Head title="Nowy projekt" />
+        <AppLayout title={`Edycja: ${project.name}`}>
+            <Head title={`Edycja: ${project.name}`} />
             <div className="mx-auto max-w-2xl p-6 space-y-5">
                 {/* Back navigation */}
                 <div className="flex items-center gap-3">
-                    <Link href={route('projects.index')}>
-                        <Button variant="ghost" size="sm" title="Wróć do listy projektów">
+                    <Link href={route('projects.show', project.id)}>
+                        <Button variant="ghost" size="sm" title="Wróć do projektu">
                             <ArrowLeft className="h-4 w-4" />
                         </Button>
                     </Link>
-                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Nowy projekt</h1>
+                    <div>
+                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                            Edytuj projekt
+                        </h1>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{project.name}</p>
+                    </div>
                 </div>
 
                 {/* Form card */}
@@ -48,7 +70,7 @@ export default function ProjectCreate({ users: _users }: Props) {
                     <CardHeader>
                         <CardTitle>Dane projektu</CardTitle>
                         <CardDescription>
-                            Wypełnij poniższe pola, aby utworzyć nowy projekt.
+                            Zaktualizuj informacje o projekcie i zapisz zmiany.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -157,18 +179,87 @@ export default function ProjectCreate({ users: _users }: Props) {
 
                             {/* Actions */}
                             <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4 dark:border-gray-700">
-                                <Link href={route('projects.index')}>
+                                <Link href={route('projects.show', project.id)}>
                                     <Button variant="outline" type="button">
                                         Anuluj
                                     </Button>
                                 </Link>
                                 <Button type="submit" disabled={processing}>
-                                    {processing ? 'Tworzenie projektu...' : 'Utwórz projekt'}
+                                    {processing ? 'Zapisywanie...' : 'Zapisz zmiany'}
                                 </Button>
                             </div>
                         </form>
                     </CardContent>
                 </Card>
+
+                {/* Current members — read-only display */}
+                {members.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>
+                                Aktualni członkowie
+                                <span className="ml-2 text-sm font-normal text-gray-500">
+                                    ({members.length})
+                                </span>
+                            </CardTitle>
+                            <CardDescription>
+                                Lista osób przypisanych do projektu. Zarządzanie członkami dostępne
+                                jest w ustawieniach projektu.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-gray-200 dark:border-gray-700">
+                                            <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                                Użytkownik
+                                            </th>
+                                            <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400">
+                                                Rola w projekcie
+                                            </th>
+                                            <th className="px-4 py-3 text-left font-medium text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                                                Adres e-mail
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                        {members.map(member => (
+                                            <tr key={member.id}>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                                                            {member.user?.first_name?.[0]}
+                                                            {member.user?.last_name?.[0]}
+                                                        </div>
+                                                        <span className="font-medium text-gray-900 dark:text-white">
+                                                            {member.user?.full_name ?? '—'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Badge
+                                                        className={cn(
+                                                            'rounded-full text-xs font-semibold',
+                                                            MEMBER_ROLE_COLORS[member.project_role] ??
+                                                                'bg-gray-100 text-gray-600',
+                                                        )}
+                                                    >
+                                                        {MEMBER_ROLE_LABELS[member.project_role] ??
+                                                            member.project_role}
+                                                    </Badge>
+                                                </td>
+                                                <td className="px-4 py-3 text-gray-500 dark:text-gray-400 hidden sm:table-cell">
+                                                    {member.user?.email ?? '—'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </AppLayout>
     );
