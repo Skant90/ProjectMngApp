@@ -14,7 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
-            \Tightenco\Ziggy\Ziggy::class,
+            \Tighten\Ziggy\Ziggy::class,
         ]);
 
         $middleware->alias([
