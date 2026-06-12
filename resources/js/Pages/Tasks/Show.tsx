@@ -37,7 +37,7 @@ export default function TaskShow({ task, comments, attachments, activity_log, pr
     const { auth, flash } = usePage<PageProps>().props;
 
     const commentForm = useForm({ content: '' });
-    const attachmentForm = useForm({ file: null as File | null });
+    const attachmentForm = useForm({ file: null as File | null, entity_type: 'task', entity_id: task.id });
 
     function submitComment(e: React.FormEvent) {
         e.preventDefault();
@@ -48,7 +48,7 @@ export default function TaskShow({ task, comments, attachments, activity_log, pr
 
     function submitAttachment(e: React.FormEvent) {
         e.preventDefault();
-        attachmentForm.post(route('tasks.attachments.store', task.id), {
+        attachmentForm.post(route('attachments.store'), {
             forceFormData: true,
             onSuccess: () => attachmentForm.reset(),
         });
