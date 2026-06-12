@@ -32,6 +32,17 @@ class AttachmentController extends Controller
 
     public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
+        \Log::info('Attachment upload attempt', [
+            'has_file' => $request->hasFile('file'),
+            'entity_type' => $request->input('entity_type'),
+            'entity_id' => $request->input('entity_id'),
+            'file_valid' => $request->hasFile('file') ? $request->file('file')->isValid() : null,
+            'file_error' => $request->hasFile('file') ? $request->file('file')->getError() : null,
+            'original_name' => $request->hasFile('file') ? $request->file('file')->getClientOriginalName() : null,
+            'mime' => $request->hasFile('file') ? $request->file('file')->getMimeType() : null,
+            'all_keys' => array_keys($request->all()),
+        ]);
+
         $data = $request->validate([
             'entity_type' => ['required', 'in:project,task,comment'],
             'entity_id' => ['required', 'integer'],
