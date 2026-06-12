@@ -12,14 +12,6 @@ use Inertia\Response;
 
 class UserController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware(function ($request, $next) {
-            if (!Auth::user()->isAdmin()) abort(403);
-            return $next($request);
-        });
-    }
-
     public function index(Request $request): Response
     {
         $users = User::query()
