@@ -71,6 +71,10 @@ class AttachmentController extends Controller
 
         ActivityLog::record('upload_file', $data['entity_type'], $data['entity_id'], null, $file->getClientOriginalName());
 
+        if ($data['entity_type'] === 'task') {
+            return redirect()->route('tasks.show', $data['entity_id'])->with('success', 'Plik przesłany.');
+        }
+
         return back()->with('success', 'Plik przesłany.');
     }
 
