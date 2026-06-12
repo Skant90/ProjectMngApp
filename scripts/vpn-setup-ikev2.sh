@@ -4,6 +4,7 @@
 # Ubuntu 26.04 — działa natywnie na Windows 10/11 bez dodatkowego oprogramowania
 # =============================================================================
 set -euo pipefail
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 VPN_SERVER_IP="${1:-}"
 VPN_SUBNET="10.20.0.0/24"
@@ -174,12 +175,13 @@ fi
 
 # ── Firewall (UFW) ────────────────────────────────────────────────────────────
 info "Konfiguruję UFW..."
-ufw allow 500/udp  comment 'IKEv2 VPN'
-ufw allow 4500/udp comment 'IKEv2 VPN NAT-T'
-ufw allow 22/tcp   comment 'SSH'
-ufw allow from "${VPN_SUBNET}" to any port 80  comment 'HTTP z VPN'
-ufw allow from "${VPN_SUBNET}" to any port 443 comment 'HTTPS z VPN'
-ufw --force enable
+UFW=$(command -v ufw || echo /usr/sbin/ufw)
+$UFW allow 500/udp  comment 'IKEv2 VPN'
+$UFW allow 4500/udp comment 'IKEv2 VPN NAT-T'
+$UFW allow 22/tcp   comment 'SSH'
+$UFW allow from "${VPN_SUBNET}" to any port 80  comment 'HTTP z VPN'
+$UFW allow from "${VPN_SUBNET}" to any port 443 comment 'HTTPS z VPN'
+$UFW --force enable
 
 # ── Eksport certyfikatu CA ────────────────────────────────────────────────────
 info "Eksportuję certyfikat CA dla Windows..."
