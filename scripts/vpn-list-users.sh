@@ -1,27 +1,29 @@
 #!/bin/bash
 # =============================================================================
-# Lista użytkowników VPN + status połączeń (strongSwan 6.x / swanctl)
+# Lista użytkowników VPN L2TP/IPSec + status
 # =============================================================================
 [[ $EUID -ne 0 ]] && echo "Uruchom jako root." && exit 1
 
-SWANCTL_DIR="/etc/swanctl"
+CHAP_SECRETS="/etc/ppp/chap-secrets"
+CLIENTS_DIR="/etc/vpn-users"
 
 echo "══════════════════════════════════════"
-echo " Użytkownicy VPN IKEv2"
+echo " Użytkownicy VPN L2TP/IPSec"
 echo "══════════════════════════════════════"
 
-shopt -s nullglob
-eap_files=("${SWANCTL_DIR}/conf.d/eap-"*.conf)
-if [[ ${#eap_files[@]} -eq 0 ]]; then
+if [[ ! -f "$CHAP_SECRETS" ]] || ! grep -qP "^\w" "$CHAP_SECRETS" 2>/dev/null; then
     echo "  Brak użytkowników. Dodaj: ./scripts/vpn-add-user.sh <login>"
 else
-    for f in "${eap_files[@]}"; do
-        login=$(grep -oP 'id = \K\S+' "$f" 2>/dev/null | head -1)
-        echo "  • ${login}"
-    done
+    grep -P "^\w" "$CHAP_SECRETS" | awk '{print "  •", $1}'
 fi
 
 echo ""
-echo "Aktywne połączenia:"
-swanctl --list-sas 2>/dev/null | grep -E "ikev2-vpn|ESTABLISHED" || echo "  Brak aktywnych połączeń."
+echo "Klucz PSK: $(cat "${CLIENTS_DIR}/.psk" 2>/dev/null || echo 'nieznany')"
+echo "Serwer:    $(cat "${CLIENTS_DIR}/.server_ip" 2>/dev/null || echo 'nieznany')"
+echo ""
+echo "Aktywne tunele IPSec:"
+swanctl --list-sas 2>/dev/null | grep -E "ESTABLISHED|l2tp" || echo "  Brak aktywnych połączeń."
+echo ""
+echo "Aktywne sesje PPP (zalogowani użytkownicy):"
+who 2>/dev/null | grep ppp || ps aux 2>/dev/null | grep pppd | grep -v grep | awk '{print "  •", $0}' || echo "  Brak."
 echo ""

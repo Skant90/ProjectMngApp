@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Zmień hasło użytkownika VPN (strongSwan 6.x / swanctl)
+# Zmień hasło użytkownika VPN L2TP/IPSec
 # Użycie: ./vpn-update-password.sh <login> <nowe_haslo>
 # =============================================================================
 set -euo pipefail
@@ -15,30 +15,17 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 LOGIN="$1"
 NEW_PASS="$2"
-SWANCTL_DIR="/etc/swanctl"
 CLIENTS_DIR="/etc/vpn-users"
-EAP_CONF="${SWANCTL_DIR}/conf.d/eap-${LOGIN}.conf"
+CHAP_SECRETS="/etc/ppp/chap-secrets"
 
 [[ ${#NEW_PASS} -lt 8 ]] && error "Hasło musi mieć co najmniej 8 znaków."
-[[ ! -f "$EAP_CONF" ]] && error "Użytkownik '${LOGIN}' nie istnieje."
+grep -qP "^${LOGIN}\s" "$CHAP_SECRETS" 2>/dev/null || error "Użytkownik '${LOGIN}' nie istnieje."
 
-# Nadpisz plik sekretów
-cat > "$EAP_CONF" << EOF
-secrets {
-    eap-${LOGIN} {
-        id = ${LOGIN}
-        secret = "${NEW_PASS}"
-    }
-}
-EOF
-chmod 600 "$EAP_CONF"
+sed -i "s|^${LOGIN}\s.*|${LOGIN}    *    \"${NEW_PASS}\"    *|" "$CHAP_SECRETS"
 
-# Zaktualizuj plik klienta
 if [[ -f "${CLIENTS_DIR}/${LOGIN}.conf" ]]; then
     sed -i "s/^PASSWORD=.*/PASSWORD=${NEW_PASS}/" "${CLIENTS_DIR}/${LOGIN}.conf"
 fi
-
-swanctl --load-creds
 
 info "Hasło użytkownika '${LOGIN}' zostało zmienione."
 echo "Nowe hasło: ${NEW_PASS}"

@@ -1,16 +1,19 @@
 #!/bin/bash
 # =============================================================================
-# ProjectMng — Instalacja serwera VPN IKEv2/IPSec (strongSwan 6.x / swanctl)
-# Ubuntu 26.04 — działa natywnie na Windows 10/11 bez dodatkowego oprogramowania
+# ProjectMng — VPN L2TP/IPSec + PSK
+# Logowanie: login i hasło (BEZ certyfikatów, BEZ dodatkowego oprogramowania)
+# Windows 10/11 — natywna obsługa
 # =============================================================================
 set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 VPN_SERVER_IP="${1:-}"
+VPN_PSK="${2:-$(openssl rand -base64 20 | tr -d '/+=')}"
 VPN_SUBNET="10.20.0.0/24"
-VPN_POOL_ADDRS="10.20.0.100-10.20.0.200"
+VPN_LOCAL_IP="10.20.0.1"
+VPN_POOL_START="10.20.0.100"
+VPN_POOL_END="10.20.0.200"
 VPN_DNS="1.1.1.1"
-CA_CN="ProjectMng VPN CA"
 SWANCTL_DIR="/etc/swanctl"
 CLIENTS_DIR="/etc/vpn-users"
 
@@ -20,22 +23,22 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 [[ $EUID -ne 0 ]] && error "Uruchom jako root."
-[[ -z "$VPN_SERVER_IP" ]] && error "Podaj publiczne IP serwera: $0 <IP>"
+[[ -z "$VPN_SERVER_IP" ]] && error "Podaj publiczne IP serwera: $0 <IP> [klucz-psk]"
 [[ ! "$VPN_SERVER_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && error "Nieprawidłowy format IP."
 
-info "Konfiguracja IKEv2 VPN na IP: $VPN_SERVER_IP"
+info "Konfiguracja L2TP/IPSec VPN na IP: $VPN_SERVER_IP"
 
 # ── Instalacja ────────────────────────────────────────────────────────────────
-info "Instaluję strongSwan..."
-apt-get install -y strongswan strongswan-pki libcharon-extra-plugins \
-    libcharon-extauth-plugins libstrongswan-extra-plugins
+info "Instaluję strongSwan + xl2tpd + ppp..."
+apt-get install -y strongswan xl2tpd ppp \
+    libcharon-extra-plugins libcharon-extauth-plugins libstrongswan-extra-plugins
 
 mkdir -p "$CLIENTS_DIR"
 chmod 700 "$CLIENTS_DIR"
 
-# Wykryj nazwę serwisu
+# Wykryj serwis strongSwan
 VPN_SERVICE=""
-for svc in charon-systemd strongswan-starter strongswan; do
+for svc in strongswan-starter strongswan charon-systemd; do
     if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "${svc}"; then
         VPN_SERVICE="$svc"
         break
@@ -45,100 +48,94 @@ done
 info "Serwis strongSwan: ${VPN_SERVICE}"
 
 # ── Katalogi swanctl ──────────────────────────────────────────────────────────
-mkdir -p "${SWANCTL_DIR}/private" "${SWANCTL_DIR}/x509ca" "${SWANCTL_DIR}/x509" "${SWANCTL_DIR}/conf.d"
-chmod 700 "${SWANCTL_DIR}/private"
+mkdir -p "${SWANCTL_DIR}/conf.d"
 
-# ── Certyfikat CA ─────────────────────────────────────────────────────────────
-info "Generuję certyfikat CA..."
-pki --gen --type rsa --size 4096 --outform pem > "${SWANCTL_DIR}/private/ca.pem"
-chmod 600 "${SWANCTL_DIR}/private/ca.pem"
+# Usuń starą konfigurację IKEv2 jeśli istnieje
+rm -f "${SWANCTL_DIR}/conf.d/projectmng.conf"
+rm -f "${SWANCTL_DIR}/conf.d/server-key.conf"
+rm -f "${SWANCTL_DIR}/conf.d/eap-"*.conf 2>/dev/null || true
 
-pki --self \
-    --ca \
-    --lifetime 3650 \
-    --in "${SWANCTL_DIR}/private/ca.pem" \
-    --type rsa \
-    --dn "CN=${CA_CN}" \
-    --outform pem > "${SWANCTL_DIR}/x509ca/ca.pem"
+# ── Konfiguracja swanctl (L2TP/IPSec + PSK) ──────────────────────────────────
+info "Konfiguruję strongSwan (L2TP/IPSec + PSK)..."
 
-info "Certyfikat CA wygenerowany."
-
-# ── Certyfikat serwera ────────────────────────────────────────────────────────
-info "Generuję certyfikat serwera..."
-pki --gen --type rsa --size 4096 --outform pem > "${SWANCTL_DIR}/private/server.pem"
-chmod 600 "${SWANCTL_DIR}/private/server.pem"
-
-pki --pub \
-    --in "${SWANCTL_DIR}/private/server.pem" \
-    --type rsa \
-    | pki --issue \
-        --lifetime 1825 \
-        --cacert "${SWANCTL_DIR}/x509ca/ca.pem" \
-        --cakey "${SWANCTL_DIR}/private/ca.pem" \
-        --dn "CN=${VPN_SERVER_IP}" \
-        --san "${VPN_SERVER_IP}" \
-        --flag serverAuth \
-        --flag ikeIntermediate \
-        --outform pem > "${SWANCTL_DIR}/x509/server.pem"
-
-info "Certyfikat serwera wygenerowany."
-
-# ── Konfiguracja swanctl ──────────────────────────────────────────────────────
-info "Konfiguruję swanctl..."
-
-cat > "${SWANCTL_DIR}/conf.d/projectmng.conf" << EOF
+cat > "${SWANCTL_DIR}/conf.d/l2tp-psk.conf" << EOF
 connections {
-    ikev2-vpn {
-        version = 2
+    l2tp-psk {
+        version = 1
         local_addrs = %any
         remote_addrs = %any
-        fragmentation = yes
-        dpd_delay = 300s
+        proposals = aes256-sha256-modp2048, aes256-sha1-modp1024, aes128-sha1-modp1024, 3des-sha1-modp1024
 
         local {
-            auth = pubkey
-            certs = server.pem
-            id = ${VPN_SERVER_IP}
+            auth = psk
         }
-
         remote {
-            auth = eap-mschapv2
-            eap_id = %any
+            auth = psk
         }
 
         children {
-            ikev2-vpn {
-                local_ts = 0.0.0.0/0
-                remote_ts = dynamic
-                esp_proposals = aes256gcm16-sha384, aes256-sha256
-                mode = tunnel
+            l2tp-psk {
+                local_ts = dynamic[17/1701]
+                remote_ts = dynamic[17/1701]
+                mode = transport
+                esp_proposals = aes256-sha256, aes256-sha1, aes128-sha1, 3des-sha1
                 dpd_action = clear
             }
         }
-
-        pools = vpn-pool
-        send_cert = always
-        proposals = aes256gcm16-prfsha384-ecp384, aes256-sha256-modp2048, aes256-sha256-modp1024
     }
 }
 
-pools {
-    vpn-pool {
-        addrs = ${VPN_POOL_ADDRS}
-        dns = ${VPN_DNS}
-    }
-}
-EOF
-
-# Klucz prywatny serwera
-cat > "${SWANCTL_DIR}/conf.d/server-key.conf" << EOF
 secrets {
-    private-server {
-        file = server.pem
+    ike-psk {
+        secret = "${VPN_PSK}"
     }
 }
 EOF
-chmod 600 "${SWANCTL_DIR}/conf.d/server-key.conf"
+chmod 600 "${SWANCTL_DIR}/conf.d/l2tp-psk.conf"
+
+# ── xl2tpd ────────────────────────────────────────────────────────────────────
+info "Konfiguruję xl2tpd..."
+mkdir -p /etc/xl2tpd
+
+cat > /etc/xl2tpd/xl2tpd.conf << EOF
+[global]
+port = 1701
+
+[lns default]
+ip range = ${VPN_POOL_START}-${VPN_POOL_END}
+local ip = ${VPN_LOCAL_IP}
+require chap = yes
+refuse pap = yes
+require authentication = yes
+name = projectmng-vpn
+ppp debug = no
+pppoptfile = /etc/ppp/options.xl2tpd
+length bit = yes
+EOF
+
+# ── Opcje PPP ─────────────────────────────────────────────────────────────────
+cat > /etc/ppp/options.xl2tpd << EOF
+ipcp-accept-local
+ipcp-accept-remote
+ms-dns ${VPN_DNS}
+noccp
+auth
+mtu 1280
+mru 1280
+proxyarp
+lcp-echo-failure 4
+lcp-echo-interval 30
+connect-delay 5000
+EOF
+
+# Inicjalizuj chap-secrets
+echo "# login    server    secret    ip" > /etc/ppp/chap-secrets
+chmod 600 /etc/ppp/chap-secrets
+
+# ── Zapisz metadane serwera ───────────────────────────────────────────────────
+echo "$VPN_PSK" > "${CLIENTS_DIR}/.psk"
+echo "$VPN_SERVER_IP" > "${CLIENTS_DIR}/.server_ip"
+chmod 600 "${CLIENTS_DIR}/.psk" "${CLIENTS_DIR}/.server_ip"
 
 # ── IP forwarding ─────────────────────────────────────────────────────────────
 info "Włączam IP forwarding..."
@@ -150,8 +147,8 @@ net.ipv4.ip_no_pmtu_disc = 1
 EOF
 sysctl --system
 
-# ── NAT (iptables) ────────────────────────────────────────────────────────────
-info "Konfiguruję NAT..."
+# ── NAT i firewall ────────────────────────────────────────────────────────────
+info "Konfiguruję NAT i firewall..."
 ETH=$(ip route | grep default | awk '{print $5}' | head -1)
 info "Interfejs sieciowy: ${ETH}"
 
@@ -161,6 +158,17 @@ iptables -C FORWARD -s "${VPN_SUBNET}" -j ACCEPT 2>/dev/null || \
     iptables -A FORWARD -s "${VPN_SUBNET}" -j ACCEPT
 iptables -C FORWARD -d "${VPN_SUBNET}" -j ACCEPT 2>/dev/null || \
     iptables -A FORWARD -d "${VPN_SUBNET}" -j ACCEPT
+
+for port in 500 4500 1701; do
+    iptables -C INPUT -p udp --dport "$port" -j ACCEPT 2>/dev/null || \
+        iptables -A INPUT -p udp --dport "$port" -j ACCEPT
+done
+iptables -C INPUT -p tcp --dport 22 -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -C INPUT -s "${VPN_SUBNET}" -p tcp --dport 80 -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -s "${VPN_SUBNET}" -p tcp --dport 80 -j ACCEPT
+iptables -C INPUT -s "${VPN_SUBNET}" -p tcp --dport 443 -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -s "${VPN_SUBNET}" -p tcp --dport 443 -j ACCEPT
 
 mkdir -p /etc/iptables
 iptables-save > /etc/iptables/rules.v4
@@ -173,54 +181,46 @@ EOLOAD
     chmod +x /etc/network/if-pre-up.d/iptables-load
 fi
 
-# ── Firewall ──────────────────────────────────────────────────────────────────
-info "Konfiguruję firewall..."
-UFW=$(find /usr/sbin /usr/bin /sbin /bin -name ufw -type f 2>/dev/null | head -1 || true)
-
-if [[ -n "$UFW" ]]; then
-    info "Używam UFW: ${UFW}"
-    $UFW allow 500/udp  comment 'IKEv2 VPN'
-    $UFW allow 4500/udp comment 'IKEv2 VPN NAT-T'
-    $UFW allow 22/tcp   comment 'SSH'
-    $UFW allow from "${VPN_SUBNET}" to any port 80  comment 'HTTP z VPN'
-    $UFW allow from "${VPN_SUBNET}" to any port 443 comment 'HTTPS z VPN'
-    $UFW --force enable
-else
-    warn "UFW nie znalezione — konfiguruję iptables bezpośrednio."
-    # Dozwolone porty wejściowe
-    iptables -C INPUT -p udp --dport 500  -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 500  -j ACCEPT
-    iptables -C INPUT -p udp --dport 4500 -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 4500 -j ACCEPT
-    iptables -C INPUT -p tcp --dport 22   -j ACCEPT 2>/dev/null || iptables -A INPUT -p tcp --dport 22   -j ACCEPT
-    iptables -C INPUT -s "${VPN_SUBNET}" -p tcp --dport 80  -j ACCEPT 2>/dev/null || iptables -A INPUT -s "${VPN_SUBNET}" -p tcp --dport 80  -j ACCEPT
-    iptables -C INPUT -s "${VPN_SUBNET}" -p tcp --dport 443 -j ACCEPT 2>/dev/null || iptables -A INPUT -s "${VPN_SUBNET}" -p tcp --dport 443 -j ACCEPT
-    iptables-save > /etc/iptables/rules.v4
-fi
-
-# ── Eksport certyfikatu CA ────────────────────────────────────────────────────
-info "Eksportuję certyfikat CA dla Windows..."
-openssl x509 -in "${SWANCTL_DIR}/x509ca/ca.pem" -outform DER -out "/root/projectmng-vpn-ca.cer"
-cp "${SWANCTL_DIR}/x509ca/ca.pem" "/root/projectmng-vpn-ca.pem"
-
-# ── Uruchomienie strongSwan ───────────────────────────────────────────────────
+# ── Uruchomienie serwisów ─────────────────────────────────────────────────────
 info "Uruchamiam strongSwan (${VPN_SERVICE})..."
 systemctl enable "${VPN_SERVICE}"
 systemctl restart "${VPN_SERVICE}"
-sleep 3
+sleep 2
 swanctl --load-all
 
+info "Uruchamiam xl2tpd..."
+systemctl enable xl2tpd
+systemctl restart xl2tpd
+
 echo ""
-echo "════════════════════════════════════════════════════════"
-echo -e "${GREEN} VPN IKEv2 gotowy!${NC}"
-echo "════════════════════════════════════════════════════════"
+echo "════════════════════════════════════════════════════════════════"
+echo -e "${GREEN} VPN L2TP/IPSec gotowy! (logowanie: login + hasło)${NC}"
+echo "════════════════════════════════════════════════════════════════"
 echo ""
-echo "  Serwer:     ${VPN_SERVER_IP}"
-echo "  Pula IP:    ${VPN_POOL_ADDRS}"
-echo "  DNS VPN:    ${VPN_DNS}"
-echo "  Protokół:   IKEv2/IPSec + EAP-MSCHAPv2"
+echo "  Serwer:        ${VPN_SERVER_IP}"
+echo "  Klucz wstępny: ${VPN_PSK}"
+echo "  Protokół:      L2TP/IPSec + PSK"
 echo ""
-echo "  Certyfikat CA (Windows): /root/projectmng-vpn-ca.cer"
-echo "  Pobierz i zainstaluj przed pierwszym połączeniem!"
+echo "  ── Konfiguracja Windows 10/11 (BEZ certyfikatów) ──────────────"
+echo ""
+echo "  KROK 1 — jednorazowa poprawka rejestru (każdy komputer):"
+echo "  Otwórz PowerShell jako Administrator i wklej:"
+echo ""
+echo '  reg add HKLM\SYSTEM\CurrentControlSet\Services\PolicyAgent /v AssumeUDPEncapsulationContextOnSendRule /t REG_DWORD /d 2 /f'
+echo ""
+echo "  Uruchom ponownie komputer."
+echo ""
+echo "  KROK 2 — dodaj połączenie VPN:"
+echo "  Ustawienia → Sieć i Internet → VPN → Dodaj połączenie VPN"
+echo "    Dostawca VPN:  Windows (wbudowany)"
+echo "    Typ VPN:       L2TP/IPSec z kluczem wstępnym"
+echo "    Adres serwera: ${VPN_SERVER_IP}"
+echo "    Klucz wstępny: ${VPN_PSK}"
+echo "    Typ informacji logowania: Nazwa użytkownika i hasło"
+echo "    (login i hasło podajesz przy łączeniu)"
 echo ""
 echo "  Dodaj użytkownika:"
 echo "    ./scripts/vpn-add-user.sh <login> [haslo]"
+echo ""
+echo "  PSK zapisany w: ${CLIENTS_DIR}/.psk"
 echo ""
