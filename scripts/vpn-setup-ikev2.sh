@@ -33,14 +33,17 @@ info "Konfiguracja IKEv2 VPN na IP: $VPN_SERVER_IP"
 info "Instaluję strongSwan i narzędzia..."
 apt-get update -qq
 apt-get install -y strongswan strongswan-pki libcharon-extra-plugins \
-    libcharon-extauth-plugins libstrongswan-extra-plugins libtss2-tcti-tabrmd-dev \
-    iptables-persistent
+    libcharon-extauth-plugins libstrongswan-extra-plugins
 
 mkdir -p "$CLIENTS_DIR"
 chmod 700 "$CLIENTS_DIR"
 
 # ── Generowanie certyfikatów ──────────────────────────────────────────────────
 info "Generuję certyfikaty PKI..."
+
+# Upewnij się że katalogi ipsec.d istnieją
+mkdir -p "${CERT_DIR}/private" "${CERT_DIR}/cacerts" "${CERT_DIR}/certs"
+chmod 700 "${CERT_DIR}/private"
 
 # CA
 ipsec pki --gen --type rsa --size 4096 --outform pem > "${CERT_DIR}/private/ca.pem"
@@ -152,8 +155,18 @@ iptables -t nat -A POSTROUTING -s "${VPN_SUBNET}" -o "${ETH}" -j MASQUERADE
 iptables -A FORWARD -s "${VPN_SUBNET}" -j ACCEPT
 iptables -A FORWARD -d "${VPN_SUBNET}" -j ACCEPT
 
-# Zapisz reguły iptables
-netfilter-persistent save
+# Zapisz reguły iptables (bez iptables-persistent — ufw zarządza firewallem)
+mkdir -p /etc/iptables
+iptables-save > /etc/iptables/rules.v4
+
+# Załaduj reguły przy starcie systemu
+if [ ! -f /etc/network/if-pre-up.d/iptables-load ]; then
+    cat > /etc/network/if-pre-up.d/iptables-load << 'EOLOAD'
+#!/bin/sh
+iptables-restore < /etc/iptables/rules.v4
+EOLOAD
+    chmod +x /etc/network/if-pre-up.d/iptables-load
+fi
 
 # UFW
 ufw allow 500/udp  comment 'IKEv2 VPN'
