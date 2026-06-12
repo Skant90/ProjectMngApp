@@ -116,6 +116,9 @@ class ProjectController extends Controller
             'creator',
             'members.user',
             'contacts',
+            'tasks' => fn ($q) => $q->with(['assignee', 'tags'])
+                ->whereNull('parent_task_id')
+                ->orderBy('due_date'),
         ]);
 
         $project->loadCount([
