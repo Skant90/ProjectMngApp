@@ -173,15 +173,28 @@ EOLOAD
     chmod +x /etc/network/if-pre-up.d/iptables-load
 fi
 
-# ── Firewall (UFW) ────────────────────────────────────────────────────────────
-info "Konfiguruję UFW..."
-UFW=$(command -v ufw || echo /usr/sbin/ufw)
-$UFW allow 500/udp  comment 'IKEv2 VPN'
-$UFW allow 4500/udp comment 'IKEv2 VPN NAT-T'
-$UFW allow 22/tcp   comment 'SSH'
-$UFW allow from "${VPN_SUBNET}" to any port 80  comment 'HTTP z VPN'
-$UFW allow from "${VPN_SUBNET}" to any port 443 comment 'HTTPS z VPN'
-$UFW --force enable
+# ── Firewall ──────────────────────────────────────────────────────────────────
+info "Konfiguruję firewall..."
+UFW=$(find /usr/sbin /usr/bin /sbin /bin -name ufw -type f 2>/dev/null | head -1 || true)
+
+if [[ -n "$UFW" ]]; then
+    info "Używam UFW: ${UFW}"
+    $UFW allow 500/udp  comment 'IKEv2 VPN'
+    $UFW allow 4500/udp comment 'IKEv2 VPN NAT-T'
+    $UFW allow 22/tcp   comment 'SSH'
+    $UFW allow from "${VPN_SUBNET}" to any port 80  comment 'HTTP z VPN'
+    $UFW allow from "${VPN_SUBNET}" to any port 443 comment 'HTTPS z VPN'
+    $UFW --force enable
+else
+    warn "UFW nie znalezione — konfiguruję iptables bezpośrednio."
+    # Dozwolone porty wejściowe
+    iptables -C INPUT -p udp --dport 500  -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 500  -j ACCEPT
+    iptables -C INPUT -p udp --dport 4500 -j ACCEPT 2>/dev/null || iptables -A INPUT -p udp --dport 4500 -j ACCEPT
+    iptables -C INPUT -p tcp --dport 22   -j ACCEPT 2>/dev/null || iptables -A INPUT -p tcp --dport 22   -j ACCEPT
+    iptables -C INPUT -s "${VPN_SUBNET}" -p tcp --dport 80  -j ACCEPT 2>/dev/null || iptables -A INPUT -s "${VPN_SUBNET}" -p tcp --dport 80  -j ACCEPT
+    iptables -C INPUT -s "${VPN_SUBNET}" -p tcp --dport 443 -j ACCEPT 2>/dev/null || iptables -A INPUT -s "${VPN_SUBNET}" -p tcp --dport 443 -j ACCEPT
+    iptables-save > /etc/iptables/rules.v4
+fi
 
 # ── Eksport certyfikatu CA ────────────────────────────────────────────────────
 info "Eksportuję certyfikat CA dla Windows..."
