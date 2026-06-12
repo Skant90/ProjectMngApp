@@ -1,29 +1,31 @@
 #!/bin/bash
 # =============================================================================
-# Lista użytkowników VPN L2TP/IPSec + status
+# Lista użytkowników WireGuard VPN + status połączeń
 # =============================================================================
 [[ $EUID -ne 0 ]] && echo "Uruchom jako root." && exit 1
 
-CHAP_SECRETS="/etc/ppp/chap-secrets"
 CLIENTS_DIR="/etc/vpn-users"
 
 echo "══════════════════════════════════════"
-echo " Użytkownicy VPN L2TP/IPSec"
+echo " Użytkownicy WireGuard VPN"
 echo "══════════════════════════════════════"
 
-if [[ ! -f "$CHAP_SECRETS" ]] || ! grep -qP "^\w" "$CHAP_SECRETS" 2>/dev/null; then
+shopt -s nullglob
+confs=("${CLIENTS_DIR}/"*.conf)
+if [[ ${#confs[@]} -eq 0 ]]; then
     echo "  Brak użytkowników. Dodaj: ./scripts/vpn-add-user.sh <login>"
 else
-    grep -P "^\w" "$CHAP_SECRETS" | awk '{print "  •", $1}'
+    for f in "${confs[@]}"; do
+        login=$(basename "$f" .conf)
+        ip=$(grep "^Address" "$f" | awk '{print $3}' | cut -d/ -f1)
+        echo "  • ${login} (${ip})"
+    done
 fi
 
 echo ""
-echo "Klucz PSK: $(cat "${CLIENTS_DIR}/.psk" 2>/dev/null || echo 'nieznany')"
-echo "Serwer:    $(cat "${CLIENTS_DIR}/.server_ip" 2>/dev/null || echo 'nieznany')"
+echo "Aktywne połączenia WireGuard:"
+wg show wg0 2>/dev/null | grep -A3 "peer:" | grep -E "peer:|endpoint:|latest handshake:" || echo "  Brak aktywnych połączeń."
 echo ""
-echo "Aktywne tunele IPSec:"
-swanctl --list-sas 2>/dev/null | grep -E "ESTABLISHED|l2tp" || echo "  Brak aktywnych połączeń."
-echo ""
-echo "Aktywne sesje PPP (zalogowani użytkownicy):"
-who 2>/dev/null | grep ppp || ps aux 2>/dev/null | grep pppd | grep -v grep | awk '{print "  •", $0}' || echo "  Brak."
+echo "Status interfejsu:"
+wg show wg0 2>/dev/null | head -5 || echo "  WireGuard nie działa."
 echo ""
