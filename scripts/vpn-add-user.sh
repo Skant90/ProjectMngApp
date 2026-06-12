@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Dodaj użytkownika VPN IKEv2
+# Dodaj użytkownika VPN IKEv2 (strongSwan 6.x / swanctl)
 # Użycie: ./vpn-add-user.sh <login> [haslo]
 # =============================================================================
 set -euo pipefail
@@ -13,14 +13,14 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 [[ -z "${1:-}" ]] && error "Podaj login: $0 <login> [haslo]"
 
 LOGIN="$1"
+SWANCTL_DIR="/etc/swanctl"
 CLIENTS_DIR="/etc/vpn-users"
+EAP_CONF="${SWANCTL_DIR}/conf.d/eap-${LOGIN}.conf"
 
-# Sprawdź czy użytkownik już istnieje
-if grep -q "\"${LOGIN}\"" /etc/ipsec.secrets 2>/dev/null; then
-    error "Użytkownik '${LOGIN}' już istnieje. Użyj vpn-update-user.sh aby zmienić hasło."
+if [[ -f "$EAP_CONF" ]]; then
+    error "Użytkownik '${LOGIN}' już istnieje. Użyj vpn-update-password.sh aby zmienić hasło."
 fi
 
-# Generuj hasło jeśli nie podano
 if [[ -z "${2:-}" ]]; then
     PASSWORD=$(openssl rand -base64 16 | tr -d '/+=')
     info "Wygenerowano hasło automatycznie."
@@ -29,13 +29,20 @@ else
     [[ ${#PASSWORD} -lt 8 ]] && error "Hasło musi mieć co najmniej 8 znaków."
 fi
 
-# Dodaj do ipsec.secrets
-echo "\"${LOGIN}\" : EAP \"${PASSWORD}\"" >> /etc/ipsec.secrets
+# Utwórz plik sekretów swanctl dla użytkownika
+cat > "$EAP_CONF" << EOF
+secrets {
+    eap-${LOGIN} {
+        id = ${LOGIN}
+        secret = "${PASSWORD}"
+    }
+}
+EOF
+chmod 600 "$EAP_CONF"
 
-# Zapisz dane w pliku klienta
+# Zapisz dane klienta
 mkdir -p "$CLIENTS_DIR"
 chmod 700 "$CLIENTS_DIR"
-
 cat > "${CLIENTS_DIR}/${LOGIN}.conf" << EOF
 # Dane VPN użytkownika: ${LOGIN}
 # Data utworzenia: $(date '+%Y-%m-%d %H:%M:%S')
@@ -44,18 +51,16 @@ PASSWORD=${PASSWORD}
 EOF
 chmod 600 "${CLIENTS_DIR}/${LOGIN}.conf"
 
-# Przeładuj strongSwan (bez przerywania połączeń)
-ipsec rereadsecrets
+# Przeładuj konfigurację (bez przerywania połączeń)
+swanctl --load-creds
+
+VPN_IP=$(grep -oP 'id = \K[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "${SWANCTL_DIR}/conf.d/projectmng.conf" 2>/dev/null | head -1 || echo "TWOJ_IP")
 
 echo ""
 echo "════════════════════════════════════════════════"
 echo -e "${GREEN} Użytkownik VPN dodany: ${LOGIN}${NC}"
 echo "════════════════════════════════════════════════"
 echo ""
-
-# Wyświetl instrukcję konfiguracji Windows
-VPN_IP=$(grep -oP 'leftid=\K[^\s]+' /etc/ipsec.conf 2>/dev/null || echo "TWOJ_IP")
-
 echo "  Dane do połączenia (Windows):"
 echo "  ─────────────────────────────────────────"
 echo "  Adres serwera: ${VPN_IP}"

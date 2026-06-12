@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Usuń użytkownika VPN IKEv2
+# Usuń użytkownika VPN IKEv2 (strongSwan 6.x / swanctl)
 # Użycie: ./vpn-remove-user.sh <login>
 # =============================================================================
 set -euo pipefail
@@ -13,23 +13,15 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 [[ -z "${1:-}" ]] && error "Podaj login: $0 <login>"
 
 LOGIN="$1"
+SWANCTL_DIR="/etc/swanctl"
 CLIENTS_DIR="/etc/vpn-users"
+EAP_CONF="${SWANCTL_DIR}/conf.d/eap-${LOGIN}.conf"
 
-# Sprawdź czy istnieje
-if ! grep -q "\"${LOGIN}\"" /etc/ipsec.secrets 2>/dev/null; then
-    error "Użytkownik '${LOGIN}' nie istnieje."
-fi
+[[ ! -f "$EAP_CONF" ]] && error "Użytkownik '${LOGIN}' nie istnieje."
 
-# Rozłącz aktywne sesje tego użytkownika
-ipsec down ikev2-vpn{*} 2>/dev/null || true
-
-# Usuń z ipsec.secrets
-sed -i "/\"${LOGIN}\" : EAP/d" /etc/ipsec.secrets
-
-# Usuń plik klienta
+rm -f "$EAP_CONF"
 rm -f "${CLIENTS_DIR}/${LOGIN}.conf"
 
-# Przeładuj strongSwan
-ipsec rereadsecrets
+swanctl --load-creds
 
 info "Użytkownik '${LOGIN}' usunięty z VPN."
