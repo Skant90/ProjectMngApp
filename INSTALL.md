@@ -64,7 +64,7 @@ cd /var/www/projectmng
 
 # Uruchom instalator VPN (podaj publiczne IP serwera)
 chmod +x scripts/*.sh
-./scripts/vpn-setup-ikev2.sh 1.2.3.4
+./scripts/vpn-setup-ikev2.sh 51.38.141.84
 #                             ↑ zastąp swoim publicznym IP
 ```
 
