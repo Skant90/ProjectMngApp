@@ -50,7 +50,7 @@ export default function NotificationsIndex({ notifications }: Props) {
     }
 
     function markRead(id: number) {
-        router.patch(route('notifications.read', id), {}, { preserveScroll: true });
+        router.post(route('notifications.read', id), {}, { preserveScroll: true });
     }
 
     return (
