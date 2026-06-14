@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, Search } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { Button } from '@/Components/ui/button';
@@ -13,15 +13,17 @@ interface Props {
 
 export default function ChatCreate({ users }: Props) {
     const [search, setSearch] = useState('');
-    const { post, processing } = useForm({});
+    const [processing, setProcessing] = useState(false);
 
     const filtered = users.filter(u =>
         `${u.first_name} ${u.last_name} ${u.email}`.toLowerCase().includes(search.toLowerCase())
     );
 
     function startChat(userId: number) {
-        post(route('chat.direct'), {
-            data: { user_id: userId } as any,
+        if (processing) return;
+        setProcessing(true);
+        router.post(route('chat.direct'), { user_id: userId }, {
+            onFinish: () => setProcessing(false),
         });
     }
 
