@@ -55,11 +55,12 @@ Route::middleware(['auth', 'active'])->group(function () {
 
     // Chat
     Route::get('chat', [ChatController::class, 'index'])->name('chat.index');
+    Route::get('chat/direct/create', [ChatController::class, 'createDirectForm'])->name('chat.direct.create');
+    Route::post('chat/direct', [ChatController::class, 'createDirect'])->name('chat.direct');
+    Route::post('chat/project/{project}', [ChatController::class, 'createProjectRoom'])->name('chat.project');
     Route::get('chat/{room}', [ChatController::class, 'show'])->name('chat.show');
     Route::post('chat/{room}/messages', [ChatController::class, 'sendMessage'])->name('chat.send');
     Route::get('chat/{room}/messages', [ChatController::class, 'messages'])->name('chat.messages');
-    Route::post('chat/direct', [ChatController::class, 'createDirect'])->name('chat.direct');
-    Route::post('chat/project/{project}', [ChatController::class, 'createProjectRoom'])->name('chat.project');
 
     // Notifications
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');

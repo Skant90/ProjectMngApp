@@ -49,7 +49,7 @@ export default function ChatIndex({ rooms }: Props) {
                                 {rooms.map(room => (
                                     <li key={room.id}>
                                         <Link
-                                            href={route('chat.room', room.id)}
+                                            href={route('chat.show', room.id)}
                                             className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                                         >
                                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-bold text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">

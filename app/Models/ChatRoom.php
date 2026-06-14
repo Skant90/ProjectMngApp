@@ -43,7 +43,7 @@ class ChatRoom extends Model
         return $this->hasMany(ChatMessage::class)->latest();
     }
 
-    public function latestMessage(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function lastMessage(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
         return $this->hasOne(ChatMessage::class)->latest();
     }
