@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 
 class AttachmentController extends Controller
 {
-    private const MAX_FILE_SIZE_MB = 50;
+    private const MAX_FILE_SIZE_MB = 100;
 
     private const ALLOWED_MIMES = [
         'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',

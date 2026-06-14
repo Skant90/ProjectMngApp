@@ -36,8 +36,12 @@ interface Props {
 export default function TaskShow({ task, comments, attachments, activity_log, project_users, tags }: Props) {
     const { auth, flash } = usePage<PageProps>().props;
 
+    const MAX_FILE_SIZE_MB = 100;
+    const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
     const commentForm = useForm({ content: '' });
     const attachmentForm = useForm({ file: null as File | null, entity_type: 'task', entity_id: task.id });
+    const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
     function submitComment(e: React.FormEvent) {
         e.preventDefault();
@@ -46,11 +50,27 @@ export default function TaskShow({ task, comments, attachments, activity_log, pr
         });
     }
 
+    function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0] ?? null;
+        if (file && file.size > MAX_FILE_SIZE_BYTES) {
+            setFileSizeError(`Plik jest za duży. Maksymalny rozmiar to ${MAX_FILE_SIZE_MB} MB (wybrany plik: ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
+            e.target.value = '';
+            attachmentForm.setData('file', null);
+        } else {
+            setFileSizeError(null);
+            attachmentForm.setData('file', file);
+        }
+    }
+
     function submitAttachment(e: React.FormEvent) {
         e.preventDefault();
+        if (!attachmentForm.data.file) return;
         attachmentForm.post(route('attachments.store'), {
             forceFormData: true,
-            onSuccess: () => attachmentForm.reset(),
+            onSuccess: () => {
+                attachmentForm.reset();
+                setFileSizeError(null);
+            },
         });
     }
 
@@ -250,15 +270,24 @@ export default function TaskShow({ task, comments, attachments, activity_log, pr
                                     </div>
                                 ))}
 
-                                <form onSubmit={submitAttachment} className="flex items-center gap-3 pt-2 border-t border-gray-100 dark:border-gray-700">
-                                    <Input
-                                        type="file"
-                                        onChange={e => attachmentForm.setData('file', e.target.files?.[0] ?? null)}
-                                        className="flex-1"
-                                    />
-                                    <Button type="submit" disabled={attachmentForm.processing || !attachmentForm.data.file}>
-                                        Prześlij
-                                    </Button>
+                                <form onSubmit={submitAttachment} className="pt-2 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                                    <div className="flex items-center gap-3">
+                                        <Input
+                                            type="file"
+                                            onChange={handleFileChange}
+                                            className="flex-1"
+                                        />
+                                        <Button type="submit" disabled={attachmentForm.processing || !attachmentForm.data.file}>
+                                            Prześlij
+                                        </Button>
+                                    </div>
+                                    {fileSizeError && (
+                                        <p className="text-sm text-red-600 dark:text-red-400">{fileSizeError}</p>
+                                    )}
+                                    {attachmentForm.errors.file && (
+                                        <p className="text-sm text-red-600 dark:text-red-400">{attachmentForm.errors.file}</p>
+                                    )}
+                                    <p className="text-xs text-gray-400">Maksymalny rozmiar pliku: {MAX_FILE_SIZE_MB} MB</p>
                                 </form>
                             </CardContent>
                         </Card>
