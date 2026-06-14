@@ -52,8 +52,7 @@ class Project extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'project_members')
-            ->withPivot(['project_role', 'can_view_all_tasks', 'can_add_tasks', 'can_upload_files', 'can_invite_users'])
-            ->withTimestamps();
+            ->withPivot(['project_role', 'can_view_all_tasks', 'can_add_tasks', 'can_upload_files', 'can_invite_users']);
     }
 
     public function contacts(): HasMany

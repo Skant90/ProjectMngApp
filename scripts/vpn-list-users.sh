@@ -1,20 +1,26 @@
 #!/bin/bash
 # =============================================================================
-# Lista użytkowników VPN + status połączeń
+# Lista użytkowników VPN L2TP/IPSec + status
 # =============================================================================
 [[ $EUID -ne 0 ]] && echo "Uruchom jako root." && exit 1
 
+CHAP_SECRETS="/etc/ppp/chap-secrets"
+CLIENTS_DIR="/etc/vpn-users"
+
 echo "══════════════════════════════════════"
-echo " Użytkownicy VPN IKEv2"
+echo " Użytkownicy VPN L2TP/IPSec"
 echo "══════════════════════════════════════"
 
-# Lista z ipsec.secrets
-grep ': EAP' /etc/ipsec.secrets 2>/dev/null | while read -r line; do
-    login=$(echo "$line" | grep -oP '"\K[^"]+(?=".*EAP)')
-    echo "  • ${login}"
-done
+if ! grep -qP "^\w" "$CHAP_SECRETS" 2>/dev/null; then
+    echo "  Brak użytkowników. Dodaj: ./scripts/vpn-add-user.sh <login>"
+else
+    grep -P "^\w" "$CHAP_SECRETS" | awk '{print "  •", $1}'
+fi
 
 echo ""
-echo "Aktywne połączenia:"
-ipsec status 2>/dev/null | grep -E "ESTABLISHED|ikev2" || echo "  Brak aktywnych połączeń."
+echo "Klucz PSK: $(cat "${CLIENTS_DIR}/.psk" 2>/dev/null || echo 'nieznany')"
+echo "Serwer:    $(cat "${CLIENTS_DIR}/.server_ip" 2>/dev/null || echo 'nieznany')"
+echo ""
+echo "Aktywne tunele IPSec:"
+swanctl --list-sas 2>/dev/null | grep -E "ESTABLISHED|l2tp" || echo "  Brak aktywnych połączeń."
 echo ""

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { ArrowLeft, Send } from 'lucide-react';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
@@ -31,12 +32,10 @@ export default function ChatRoomPage({ room, messages: initialMessages }: Props)
     useEffect(() => {
         const poll = setInterval(async () => {
             try {
-                const res = await fetch(
-                    `/chat/${room.id}/messages?after_id=${lastIdRef.current}`,
-                    { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }
+                const { data } = await axios.get<ChatMessage[]>(
+                    `/chat/${room.id}/messages`,
+                    { params: { after_id: lastIdRef.current } }
                 );
-                if (!res.ok) return;
-                const data: ChatMessage[] = await res.json();
                 if (data.length > 0) {
                     setMessages(prev => [...prev, ...data]);
                     lastIdRef.current = data[data.length - 1].id;
@@ -53,23 +52,13 @@ export default function ChatRoomPage({ room, messages: initialMessages }: Props)
         if (!message.trim() || sending) return;
         setSending(true);
         try {
-            const csrfToken = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '';
-            const res = await fetch(`/chat/${room.id}/messages`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                body: JSON.stringify({ message }),
-            });
-            if (res.ok) {
-                const newMsg: ChatMessage = await res.json();
-                setMessages(prev => [...prev, newMsg]);
-                lastIdRef.current = newMsg.id;
-                setMessage('');
-            }
+            const { data: newMsg } = await axios.post<ChatMessage>(
+                `/chat/${room.id}/messages`,
+                { message }
+            );
+            setMessages(prev => [...prev, newMsg]);
+            lastIdRef.current = newMsg.id;
+            setMessage('');
         } catch {
             // handle error silently
         } finally {

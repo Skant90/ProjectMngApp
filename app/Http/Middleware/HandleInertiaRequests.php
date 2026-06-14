@@ -6,6 +6,7 @@ use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Middleware;
+use Tighten\Ziggy\Ziggy;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -31,6 +32,10 @@ class HandleInertiaRequests extends Middleware
             'unread_notifications_count' => Auth::check()
                 ? Notification::where('user_id', Auth::id())->where('is_read', false)->count()
                 : 0,
+            'ziggy' => fn () => [
+                ...(new Ziggy)->toArray(),
+                'location' => $request->url(),
+            ],
         ];
     }
 }

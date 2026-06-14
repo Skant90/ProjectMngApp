@@ -17,11 +17,21 @@ class ChatController extends Controller
     public function index(): Response
     {
         $rooms = ChatRoom::whereHas('members', fn ($q) => $q->where('user_id', Auth::id()))
-            ->with(['members', 'latestMessage.user'])
+            ->with(['members', 'lastMessage.user'])
             ->latest()
             ->get();
 
         return Inertia::render('Chat/Index', ['rooms' => $rooms]);
+    }
+
+    public function createDirectForm(): Response
+    {
+        $users = User::where('id', '!=', Auth::id())
+            ->where('is_active', true)
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'email']);
+
+        return Inertia::render('Chat/Create', ['users' => $users]);
     }
 
     public function show(ChatRoom $room): Response

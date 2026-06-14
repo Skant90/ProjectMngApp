@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
-# Zmień hasło użytkownika VPN
-# Użycie: ./vpn-update-password.sh <login> <nowe_haslo>
+# Regeneruj klucze użytkownika WireGuard (odpowiednik zmiany hasła)
+# Użycie: ./vpn-update-password.sh <login>
 # =============================================================================
 set -euo pipefail
 
@@ -10,28 +10,15 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 [[ $EUID -ne 0 ]] && error "Uruchom jako root."
-[[ -z "${1:-}" ]] && error "Użycie: $0 <login> <nowe_haslo>"
-[[ -z "${2:-}" ]] && error "Podaj nowe hasło."
+[[ -z "${1:-}" ]] && error "Użycie: $0 <login>"
 
 LOGIN="$1"
-NEW_PASS="$2"
 CLIENTS_DIR="/etc/vpn-users"
 
-[[ ${#NEW_PASS} -lt 8 ]] && error "Hasło musi mieć co najmniej 8 znaków."
+[[ ! -f "${CLIENTS_DIR}/${LOGIN}.conf" ]] && error "Użytkownik '${LOGIN}' nie istnieje."
 
-if ! grep -q "\"${LOGIN}\"" /etc/ipsec.secrets 2>/dev/null; then
-    error "Użytkownik '${LOGIN}' nie istnieje."
-fi
+info "Regeneruję klucze dla '${LOGIN}' — usuń stary tunel w kliencie WireGuard i zaimportuj nowy."
 
-# Zaktualizuj ipsec.secrets
-sed -i "s/\"${LOGIN}\" : EAP \".*\"/\"${LOGIN}\" : EAP \"${NEW_PASS}\"/" /etc/ipsec.secrets
-
-# Zaktualizuj plik klienta
-if [[ -f "${CLIENTS_DIR}/${LOGIN}.conf" ]]; then
-    sed -i "s/^PASSWORD=.*/PASSWORD=${NEW_PASS}/" "${CLIENTS_DIR}/${LOGIN}.conf"
-fi
-
-ipsec rereadsecrets
-
-info "Hasło użytkownika '${LOGIN}' zostało zmienione."
-echo "Nowe hasło: ${NEW_PASS}"
+# Usuń i dodaj ponownie
+bash "$(dirname "$0")/vpn-remove-user.sh" "$LOGIN"
+bash "$(dirname "$0")/vpn-add-user.sh" "$LOGIN"
